@@ -73,7 +73,7 @@ def ssh_test(testuser, testpassword, ip, port=22, timeout=5):
         
         client.connect(ip, port=port, username=testuser, password=testpassword, timeout=5)
         client.close()
-        return True
+        return {"ip": ip, "auth": True, "username": testuser, "password": testpassword}
     except Exception:
         print("failed to login to {} with user {} and password {}".format(ip, testuser, testpassword))
         return False
@@ -94,7 +94,7 @@ def ftp_test(testuser, testpassword, ip, port=21, timeout=5):
         t.connect(username=testuser, password=testpassword, timeout=5)
         sftp = paramiko.SFTPClient.from_transport(t)
         sftp.get(source, dest)
-        return True
+        return {"ip": ip, "auth": True, "username": testuser, "password": testpassword}
     except Exception:
         print("failed to login to {} with user {} and password {}".format(ip, testuser, testpassword))
         return False
@@ -115,12 +115,12 @@ def concurrent_login_attempts(service, credentials, rhosts):
                 results = {pool.submit(ssh_test, username, password, str(ip)): ip for ip in rhosts}
                 for future in concurrent.futures.as_completed(results):
                     if future.result():
-                        results_list[ip] = {"username": username, "password": password, "login": future.result()}
+                        results_list["Success"] = future.result()
             elif service.lower() == "ftp":
                 results = {pool.submit(ftp_test, username, password, str(ip)): ip for ip in rhosts}
                 for future in concurrent.futures.as_completed(results):
                     if future.result():
-                        results_list.append(future.result())
+                        results_list["Success"] = future.result()
     if results_list:
         print(results_list)
     else:
