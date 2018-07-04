@@ -10,12 +10,12 @@ Options:
   --service=<service>           SSH or FTP
 """
 
-
+import json
+import random
 import ipaddress
 import paramiko
 import concurrent.futures
 from docopt import docopt
-
 
 
 def parse_rhosts_file(rhosts_file):
@@ -47,38 +47,40 @@ def format_credentials(credentials_file):
         credentials_file:   The source file passed into the cli tool
     """
     print("Formating credentials into a dict from source file: {}".format(credentials_file))
-    credentials = {}
+    credentials = []
     with open(credentials_file, "r") as file:
         for line in file:
-            creds = line.strip("\n").split(" ")
-            credentials[creds[0]] = creds[1]
+            creds = line.strip("\n")
+            credentials.append(creds)
     print(credentials)
     return credentials
 
-def ssh_test(testuser, testpassword, ip, port=22, timeout=5):
+def ssh_test(creds, ip, port=22, timeout=2):
     """
     Test user login.
     
     Arguments:
-        testuser:       username to test
-        testpassword:   password for the user
+        username:       username to test
+        password:   password for the user
     
     Return:
         Returns True for success False for failure and the server ip
     """
+    username = creds.split(" ")[0]
+    password = creds.split(" ")[1]
     try:
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.WarningPolicy)
-        
-        client.connect(ip, port=port, username=testuser, password=testpassword, timeout=5)
+        client.connect(ip, port=port, username=username, password=password, timeout=5)
         client.close()
-        return {"ip": ip, "auth": True, "username": testuser, "password": testpassword}
+        print("login succeeded on {} with user {} and password {}".format(ip, username, password))
+        return {"ip": ip, "username": username, "password": password}
     except Exception:
-        print("failed to login to {} with user {} and password {}".format(ip, testuser, testpassword))
+        print("failed to login to {} with user {} and password {}".format(ip, username, password))
         return False
 
-def ftp_test(testuser, testpassword, ip, port=21, timeout=5):
+def ftp_test(creds, ip, port=21, timeout=2):
     """
     Test user login.
     
@@ -89,14 +91,15 @@ def ftp_test(testuser, testpassword, ip, port=21, timeout=5):
     Return:
         Returns True for success False for failure and the server ip
     """
+    username = creds.split(" ")[0]
+    password = creds.split(" ")[1]
     try:
         t = paramiko.Transport((ip, port))
-        t.connect(username=testuser, password=testpassword, timeout=5)
-        sftp = paramiko.SFTPClient.from_transport(t)
-        sftp.get(source, dest)
-        return {"ip": ip, "auth": True, "username": testuser, "password": testpassword}
+        t.connect(username=username, password=password, timeout=5)
+        print("login succeeded on {} with user {} and password {}".format(ip, username, password))
+        return {"ip": ip, "username": username, "password": password}
     except Exception:
-        print("failed to login to {} with user {} and password {}".format(ip, testuser, testpassword))
+        print("failed to login to {} with user {} and password {}".format(ip, username, password))
         return False
 
 def concurrent_login_attempts(service, credentials, rhosts):
@@ -109,24 +112,18 @@ def concurrent_login_attempts(service, credentials, rhosts):
     """
     print("running concurrent login attampts for service {}".format(service))
     results_list = {}
-    for username, password in credentials.items():
-        with concurrent.futures.ProcessPoolExecutor(max_workers=50) as pool:
+    
+    with concurrent.futures.ProcessPoolExecutor(max_workers=75) as pool:
+        for ip in rhosts:
             if service.lower() == "ssh":
-                results = {pool.submit(ssh_test, username, password, str(ip)): ip for ip in rhosts}
-                for future in concurrent.futures.as_completed(results):
-                    if future.result():
-                        results_list["Success"] = future.result()
+                results = {pool.submit(ssh_test, creds, str(ip)):creds for creds in credentials}
             elif service.lower() == "ftp":
-                results = {pool.submit(ftp_test, username, password, str(ip)): ip for ip in rhosts}
-                for future in concurrent.futures.as_completed(results):
-                    if future.result():
-                        results_list["Success"] = future.result()
-    if results_list:
-        print(results_list)
-    else:
-        print("Nothing to report, move along")
+                results = {pool.submit(ftp_test, creds, str(ip)):creds for creds in credentials}
+            for future in concurrent.futures.as_completed(results):
+                if future.result():
+                    attempt_id = random.randint(1,100000)
+                    results_list[attempt_id] = future.result()
     return results_list
-
 
 def main():
     opts = docopt(__doc__)
@@ -134,7 +131,7 @@ def main():
     rhosts = parse_rhosts_file(opts['--rhosts'])
     credentials = format_credentials(opts['--credentials'])
     results = concurrent_login_attempts(opts['--service'], credentials, rhosts)
-
+    print(json.dumps(results, indent=4, sort_keys=True))
 
 if __name__ == '__main__':
     main()
