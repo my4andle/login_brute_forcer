@@ -18,6 +18,10 @@ import concurrent.futures
 from docopt import docopt
 
 
+def write_output(results):
+    with open("brutus.log", "w+") as file:
+        file.write(json.dumps(results, indent=4, sort_keys=True))
+
 def parse_rhosts_file(rhosts_file):
     """
     Parse rhosts file and create a list.
@@ -131,6 +135,7 @@ def main():
     rhosts = parse_rhosts_file(opts['--rhosts'])
     credentials = format_credentials(opts['--credentials'])
     results = concurrent_login_attempts(opts['--service'], credentials, rhosts)
+    write_output(results)
     print(json.dumps(results, indent=4, sort_keys=True))
 
 if __name__ == '__main__':
