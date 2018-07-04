@@ -1,6 +1,10 @@
 # login_brute_forcer
 I wrote this to help brute force logins for the OSCP lab.  Currently supports what you see, I will add to it as I need.
 
+#### TODO:
+- Add all the protocols: telnet, smb, rdp, etc
+- Make it faster....and faster...and faster
+- Refine the output to get rid of uuid per result
 
 # Example
 
