@@ -52,7 +52,7 @@ def parse_rhosts_file(rhosts_file):
 
 def format_credentials(credentials_file):
     """
-    Create a dictionary holding the users with passwords.
+    Create a list holding the users with passwords.
 
     Arguments:
         credentials_file:   The source file passed into the cli tool
@@ -76,11 +76,10 @@ def ssh_test(attempt, port=22, timeout=2):
     Test user login.
     
     Arguments:
-        username:       username to test
-        password:   password for the user
+        attempt:  crednetial formated with username space password
     
     Return:
-        
+        Dict with details or False
     """
     ip = attempt.split(" ")[0]
     username = attempt.split(" ")[1]
